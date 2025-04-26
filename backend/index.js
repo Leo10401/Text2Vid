@@ -23,43 +23,90 @@ if (!process.env.GEMINI_API_KEY || !process.env.PEXELS_API_KEY) {
 
 const upload = multer({ dest: "uploads/" });
 
-// Function to generate captions using Gemini
-async function generateCaptionsWithGeminiFlash(prompt) {
-  try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const result = await model.generateContent(
-      "Generate engaging TikTok-style captions. Provide at least 6 short, creative lines.\n\nPrompt: " + prompt
-    );
-
-    console.log("✅ Gemini Response:", JSON.stringify(result, null, 2));
-    const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Invalid Gemini API response format.");
-
-    return text;
-  } catch (error) {
-    console.error("❌ Error generating captions:", error);
-    throw new Error("Failed to generate captions.");
-  }
+// Add this helper function
+async function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Function to fetch images from Pexels
-async function fetchImagesFromPexels(query, numImages = 6) {
+async function generateCaptionsWithGeminiFlash(prompt) {
+  const maxRetries = 3;
+  let lastError;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+      // Modify the prompt to request simpler captions
+      const systemPrompt = `
+        Create 6-8 short, clear educational captions based on this topic: ${prompt}
+        
+        Requirements:
+        - Each caption should be a single line
+        - Keep captions between 3-8 words
+        - No hashtags or emojis
+        - Focus on key concepts and definitions
+        - Make it educational but engaging
+        
+        Format each caption on a new line.
+      `;
+
+      const result = await model.generateContent(systemPrompt);
+      const text = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (!text) throw new Error("Invalid Gemini API response format.");
+      
+      // Clean up the response to ensure one caption per line
+      const cleanedText = text
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .join('\n');
+
+      return cleanedText;
+    } catch (error) {
+      lastError = error;
+      
+      if (error.status === 429) {
+        const backoffMs = Math.min(1000 * Math.pow(2, attempt), 30000);
+        console.log(`Rate limited. Waiting ${backoffMs/1000} seconds before retry...`);
+        await wait(backoffMs);
+        continue;
+      }
+      
+      throw error;
+    }
+  }
+  
+  console.error("❌ Error generating captions after retries:", lastError);
+  throw new Error("Failed to generate captions.");
+}
+
+// Modify the fetchImagesFromPexels function to handle multiple queries
+async function fetchImagesFromPexels(queries) {
   try {
-    const response = await axios.get("https://api.pexels.com/v1/search", {
-      headers: { Authorization: process.env.PEXELS_API_KEY },
-      params: { query, per_page: numImages, orientation: "portrait" },
+    const imagePromises = queries.map(async (query) => {
+      const response = await axios.get("https://api.pexels.com/v1/search", {
+        headers: { Authorization: process.env.PEXELS_API_KEY },
+        params: { 
+          query, 
+          per_page: 1, // We only need 1 image per caption
+          orientation: "portrait" 
+        },
+      });
+
+      if (!response.data.photos || response.data.photos.length === 0) {
+        return null;
+      }
+
+      return response.data.photos[0].src.large;
     });
 
-    if (!response.data.photos || response.data.photos.length === 0) {
-      throw new Error("No images found from Pexels.");
-    }
-
-    return response.data.photos.map((photo) => photo.src.large);
+    const images = await Promise.all(imagePromises);
+    return images.filter(img => img !== null);
   } catch (error) {
     console.error("❌ Error fetching images from Pexels:", error);
-    return []; // Return empty array if fetch fails
+    return [];
   }
 }
 
@@ -70,13 +117,22 @@ async function generateVideo(promptText) {
     const generatedCaptionText = await generateCaptionsWithGeminiFlash(promptText);
     console.log("✅ Generated Captions:", generatedCaptionText);
 
-    // Fetch images using the first caption line as query
-    const firstCaptionLine = generatedCaptionText.split("\n")[0] || "nature";
-    const imageUrls = await fetchImagesFromPexels(firstCaptionLine);
+    // Get all caption lines
+    const lines = generatedCaptionText.split("\n").filter(line => line.trim() !== "");
+    
+    // Clean up the captions to make better search queries
+    const searchQueries = lines.map(line => {
+      // Remove hashtags, emojis, and special characters
+      return line.replace(/#[^\s]+/g, '')  // Remove hashtags
+                .replace(/[^\w\s]/g, '')   // Remove special chars
+                .trim();
+    });
+
+    // Fetch one image per caption
+    const imageUrls = await fetchImagesFromPexels(searchQueries);
     console.log("📸 Fetched Images:", imageUrls);
 
     // Compute dynamic duration
-    const lines = generatedCaptionText.split("\n").filter((line) => line.trim() !== "");
     const durationInFrames = lines.length * 90;
 
     // Save props data (captions + images)
@@ -102,9 +158,9 @@ async function generateVideo(promptText) {
     console.log("🎬 Video rendering complete!");
 
     return "/videos/output.mp4";
-  } catch (err) {
-    console.error("❌ Error generating video:", err);
-    throw new Error("Failed to generate video.");
+  } catch (error) {
+    console.error("❌ Error generating video:", error);
+    throw error;
   }
 }
 
