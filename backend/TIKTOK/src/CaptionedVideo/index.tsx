@@ -1,14 +1,28 @@
 import React, { useMemo } from "react";
-import { AbsoluteFill, Sequence, Img } from "remotion";
-import SubtitlePage from "./SubtitlePage";
+import { AbsoluteFill, Sequence } from "remotion";
+import { TemplateSelector, TemplateName } from "../templates";
+
+// Define video dimensions for different orientations
+export type VideoOrientation = "portrait" | "landscape" | "square";
 
 type Props = {
   promptText: string;
   images: string[];
-  durationInFrames: number; // ✅ Add this
+  durationInFrames: number;
+  templateName?: TemplateName;
+  orientation?: VideoOrientation;
+  framesPerCaption?: number;
 };
 
-export const CaptionedVideo: React.FC<Props> = ({ promptText, images, durationInFrames }) => {
+export const CaptionedVideo: React.FC<Props> = ({ 
+  promptText, 
+  images, 
+  durationInFrames,
+  templateName = "modern",
+  orientation = "portrait",
+  framesPerCaption = 90
+}) => {
+  // Extract captions from promptText
   const captions = useMemo(() => 
     promptText.split("\n")
       .filter((line) => line.trim() !== "")
@@ -16,30 +30,74 @@ export const CaptionedVideo: React.FC<Props> = ({ promptText, images, durationIn
     [promptText]
   );
 
-  // Each caption shows for 3 seconds (90 frames at 30fps)
-  const FRAMES_PER_CAPTION = 90;
+  // Estimate how many total captions we need for the entire duration
+  const requiredCaptionCount = useMemo(() => 
+    Math.ceil(durationInFrames / framesPerCaption),
+    [durationInFrames, framesPerCaption]
+  );
+
+  // If we have fewer captions than required, repeat them to fill
+  const extendedCaptions = useMemo(() => {
+    if (captions.length >= requiredCaptionCount) {
+      return captions;
+    }
+    
+    // Create a repeated array of captions
+    const repeatedCaptions = [];
+    for (let i = 0; i < requiredCaptionCount; i++) {
+      repeatedCaptions.push(captions[i % captions.length]);
+    }
+    return repeatedCaptions;
+  }, [captions, requiredCaptionCount]);
+
+  // Generate sequences to fill the entire video duration
+  const sequences = useMemo(() => {
+    const result = [];
+    
+    // Create a sequence for each caption (either original or extended)
+    for (let i = 0; i < Math.min(requiredCaptionCount, extendedCaptions.length); i++) {
+      const caption = extendedCaptions[i];
+      const imageIndex = i % images.length;
+      const imageUrl = images.length > 0 ? images[imageIndex] : "";
+      
+      // Calculate sequence duration (for the last caption, might be shorter)
+      const sequenceDuration = Math.min(
+        framesPerCaption, 
+        durationInFrames - i * framesPerCaption
+      );
+      
+      if (sequenceDuration <= 0) break;
+      
+      result.push(
+        <Sequence 
+          key={`caption-${i}`} 
+          from={i * framesPerCaption} 
+          durationInFrames={sequenceDuration}
+        >
+          <TemplateSelector 
+            templateName={templateName}
+            image={imageUrl} 
+            caption={caption}
+            orientation={orientation}
+          />
+        </Sequence>
+      );
+    }
+    
+    return result;
+  }, [
+    extendedCaptions, 
+    images, 
+    durationInFrames, 
+    framesPerCaption, 
+    templateName, 
+    orientation,
+    requiredCaptionCount
+  ]);
 
   return (
     <AbsoluteFill>
-      {captions.map((caption, index) => (
-        <Sequence 
-          key={index} 
-          from={index * FRAMES_PER_CAPTION} 
-          durationInFrames={FRAMES_PER_CAPTION}
-        >
-          {images[index % images.length] && (
-            <Img 
-              src={images[index % images.length]} 
-              style={{ 
-                width: "100%", 
-                height: "100%", 
-                objectFit: "cover"
-              }} 
-            />
-          )}
-          <SubtitlePage text={caption} />
-        </Sequence>
-      ))}
+      {sequences}
     </AbsoluteFill>
   );
 };

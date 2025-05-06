@@ -2,9 +2,9 @@
 // npx remotion render <entry-file> HelloWorld out/video.mp4
 
 import { registerRoot } from "remotion";
-import { RemotionRoot } from "./Root";
+import { Root } from "./Root";
 
-registerRoot(RemotionRoot);
+registerRoot(Root);
 
 // ✅ Load Google Font dynamically
 const loadGoogleFont = () => {
