@@ -31,6 +31,9 @@ async function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Add image cache
+const imageCache = new Map();
+
 async function generateCaptionsWithGeminiFlash(prompt, isPDF = false, videoLength = "medium") {
   const maxRetries = 3;
   let lastError;
@@ -39,7 +42,7 @@ async function generateCaptionsWithGeminiFlash(prompt, isPDF = false, videoLengt
   let captionCount;
   switch(videoLength) {
     case "short":
-      captionCount = "4-6";
+      captionCount = "6-12";
       break;
     case "long":
       captionCount = "24-32";
@@ -160,12 +163,19 @@ async function fetchImagesFromPexels(queries, orientation = "portrait") {
         break;
     }
     
+    // Process queries in parallel with caching
     const imagePromises = queries.map(async (query) => {
+      // Check cache first
+      const cacheKey = `${query}-${pexelsOrientation}`;
+      if (imageCache.has(cacheKey)) {
+        return imageCache.get(cacheKey);
+      }
+
       const response = await axios.get("https://api.pexels.com/v1/search", {
         headers: { Authorization: process.env.PEXELS_API_KEY },
         params: { 
           query, 
-          per_page: 1, // We only need 1 image per caption
+          per_page: 1,
           orientation: pexelsOrientation 
         },
       });
@@ -174,7 +184,10 @@ async function fetchImagesFromPexels(queries, orientation = "portrait") {
         return null;
       }
 
-      return response.data.photos[0].src.large;
+      const imageUrl = response.data.photos[0].src.large;
+      // Cache the result
+      imageCache.set(cacheKey, imageUrl);
+      return imageUrl;
     });
 
     const images = await Promise.all(imagePromises);
@@ -279,22 +292,22 @@ async function generateVideo(promptText, isPDF = false, template = "modern", ori
     const textForSpeech = lines;
     console.log("🔊 Captions for speech:", textForSpeech);
 
-    // Compute dynamic duration based on video length
+    // Optimize video duration and frame rate
     let framesPerCaption;
     let totalDurationInSeconds;
     switch(videoLength) {
       case "short":
-        framesPerCaption = 75; // 2.5 seconds per caption at 30fps
-        totalDurationInSeconds = 30; // 30 seconds for short videos
+        framesPerCaption = 60; // 2 seconds per caption at 30fps
+        totalDurationInSeconds = 24; // 24 seconds for short videos
         break;
       case "long":
-        framesPerCaption = 120; // 4 seconds per caption at 30fps
-        totalDurationInSeconds = 120; // 2 minutes for long videos
+        framesPerCaption = 90; // 3 seconds per caption at 30fps
+        totalDurationInSeconds = 90; // 1.5 minutes for long videos
         break;
       case "medium":
       default:
-        framesPerCaption = 90; // 3 seconds per caption at 30fps
-        totalDurationInSeconds = 60; // 1 minute for medium videos
+        framesPerCaption = 75; // 2.5 seconds per caption at 30fps
+        totalDurationInSeconds = 45; // 45 seconds for medium videos
         break;
     }
     
@@ -302,7 +315,6 @@ async function generateVideo(promptText, isPDF = false, template = "modern", ori
     const totalDurationInFrames = totalDurationInSeconds * 30;
     
     // Ensure we have enough captions to fill the video duration
-    // If not enough captions, we'll repeat them to fill the time
     const durationInFrames = Math.max(totalDurationInFrames, lines.length * framesPerCaption);
 
     // Create videos directory if it doesn't exist
@@ -353,12 +365,12 @@ async function generateVideo(promptText, isPDF = false, template = "modern", ori
       compositionId = "CaptionedVideo"; // Default for portrait
     }
     
-    // Execute Remotion render with the appropriate composition
+    // Execute Remotion render with optimized settings
     const remotionProjectPath = path.join(__dirname, "TIKTOK");
     console.log(`🎬 Rendering video with orientation: ${orientation} (using composition: ${compositionId})...`);
     
-    // Build the command
-    const command = `cd ${remotionProjectPath} && npx remotion render src/index.ts ${compositionId} "../videos/output.mp4" --props="../videos/props.json"`;
+    // Build the command with optimized settings
+    const command = `cd ${remotionProjectPath} && npx remotion render src/index.ts ${compositionId} "../videos/output.mp4" --props="../videos/props.json" --concurrency=4 --quality=80`;
     await execAsync(command);
     console.log("✅ Video rendering complete!");
 

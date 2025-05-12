@@ -9,9 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@remotion/cli": "^4.0.298",
+    "@remotion/player": "^4.0.298",
+    "@remotion/renderer": "^4.0.298",
+    "next": "15.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "next": "15.2.1"
+    "remotion": "^4.0.298"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

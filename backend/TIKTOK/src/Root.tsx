@@ -14,8 +14,8 @@ const captionedVideoSchema = z.object({
   framesPerCaption: z.number().optional(),
 });
 
-// Default FPS for all videos
-const FPS = 30;
+// Optimize FPS for better performance
+const FPS = 24; // Reduced from 30fps to 24fps for better performance
 
 // Export as both Root and RemotionRoot to handle all potential imports
 export const Root = () => {
@@ -28,15 +28,15 @@ export const Root = () => {
         width={VIDEO_DIMENSIONS.portrait.width}
         height={VIDEO_DIMENSIONS.portrait.height}
         fps={FPS}
-        durationInFrames={1800} // Default 60 seconds (30fps * 60s)
+        durationInFrames={3000} // Large enough to cover all user options
         schema={captionedVideoSchema}
         defaultProps={{
           promptText: "Example TikTok video\nWith multiple lines\nAnd animations",
           images: [],
-          durationInFrames: 1800,
+          durationInFrames: 1080,
           templateName: "modern",
           orientation: "portrait",
-          framesPerCaption: 90
+          framesPerCaption: 60
         }}
       />
       
@@ -47,15 +47,15 @@ export const Root = () => {
         width={VIDEO_DIMENSIONS.landscape.width}
         height={VIDEO_DIMENSIONS.landscape.height}
         fps={FPS}
-        durationInFrames={1800}
+        durationInFrames={3000}
         schema={captionedVideoSchema}
         defaultProps={{
           promptText: "Example YouTube video\nWith multiple lines\nAnd animations",
           images: [],
-          durationInFrames: 1800,
+          durationInFrames: 1080,
           templateName: "modern",
           orientation: "landscape",
-          framesPerCaption: 90
+          framesPerCaption: 60
         }}
       />
       
@@ -66,15 +66,15 @@ export const Root = () => {
         width={VIDEO_DIMENSIONS.square.width}
         height={VIDEO_DIMENSIONS.square.height}
         fps={FPS}
-        durationInFrames={1800}
+        durationInFrames={3000}
         schema={captionedVideoSchema}
         defaultProps={{
           promptText: "Example Instagram video\nWith multiple lines\nAnd animations",
           images: [],
-          durationInFrames: 1800,
+          durationInFrames: 1080,
           templateName: "modern",
           orientation: "square",
-          framesPerCaption: 90
+          framesPerCaption: 60
         }}
       />
     </>
